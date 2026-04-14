@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Settings, Search, ChevronLeft, Image as ImageIcon, Send, Plus, History } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Menu, Settings, Image as ImageIcon, Send, Plus, History, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetClose } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -16,7 +16,7 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  imageUrl?: string;
+  imageUrls?: string[];
   appraisal?: AppraisalRecord;
 }
 
@@ -26,46 +26,24 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const handleSendMessage = () => {
-    if (!inputText.trim()) return;
-    
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: inputText
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
-    if (view !== 'chat') setView('chat');
-
-    // Simple auto-reply for now
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: '我是见真 TureSee AI 助手。请上传您想要鉴定的物品图片，我会为您提供专业的鉴定服务。'
-      };
-      setMessages(prev => [...prev, aiMessage]);
-    }, 600);
-  };
-
+  // 上传图片 - 只添加到待鉴定区域，不直接鉴定
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // 限制最多4张
-    const limitedFiles = files.slice(0, 4);
-    
-    setIsAnalyzing(true);
-    setView('chat');
+    // 最多4张
+    const currentCount = pendingImages.length;
+    const remainingSlots = 4 - currentCount;
+    if (remainingSlots <= 0) return;
 
-    // 读取所有图片为 base64
-    const base64Images = await Promise.all(
-      limitedFiles.map(file => {
+    const filesToAdd = files.slice(0, remainingSlots);
+
+    // 读取图片为 base64
+    const newImages = await Promise.all(
+      filesToAdd.map(file => {
         return new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target?.result as string);
@@ -75,56 +53,103 @@ export default function App() {
       })
     );
 
-    // 显示用户消息（显示第一张图片缩略图）
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: `请帮我见真一下这件宝贝（共${base64Images.length}张图片）`,
-      imageUrl: base64Images[0]
-    };
-    setMessages(prev => [...prev, userMessage]);
+    setPendingImages(prev => [...prev, ...newImages].slice(0, 4));
+    setView('chat');
 
-    try {
-      // 发送第一张图片进行鉴定（API目前只支持单图）
-      const result = await appraiseItem(base64Images[0], limitedFiles[0].type);
-      const newRecord: AppraisalRecord = {
+    // 清空文件输入，以便下次选择相同文件
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // 移除待鉴定图片
+  const removePendingImage = (index: number) => {
+    setPendingImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // 发送消息/发起鉴定
+  const handleSend = async () => {
+    const hasImages = pendingImages.length > 0;
+    const hasText = inputText.trim();
+
+    // 如果既没图片也没文字，不发送
+    if (!hasImages && !hasText) return;
+
+    // 如果有图片，发起鉴定
+    if (hasImages) {
+      setIsAnalyzing(true);
+
+      // 添加用户消息
+      const userMessage: Message = {
         id: Date.now().toString(),
-        title: result.title,
-        date: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
-        estimatedValue: result.estimatedValue,
-        description: result.description,
-        imageUrl: base64Images[0],
-        conclusion: result.conclusion,
-        model: result.model,
-        keyPoints: result.keyPoints
+        role: 'user',
+        content: hasText ? inputText : `请帮我见真一下这件宝贝（共${pendingImages.length}张图片）`,
+        imageUrls: pendingImages
       };
-      // 添加新记录，最多保留6条
-      setHistory(prev => [newRecord, ...prev].slice(0, 6));
-      
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: '鉴定完成，以下是详细报告：',
-        appraisal: newRecord
+      setMessages(prev => [...prev, userMessage]);
+
+      const submittedImages = [...pendingImages];
+      setPendingImages([]);
+      setInputText('');
+
+      try {
+        // 调用鉴定API
+        const result = await appraiseItem(submittedImages[0], 'image/jpeg');
+        const newRecord: AppraisalRecord = {
+          id: Date.now().toString(),
+          title: result.title,
+          date: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
+          estimatedValue: result.estimatedValue,
+          description: result.description,
+          imageUrl: submittedImages[0],
+          conclusion: result.conclusion,
+          model: result.model,
+          keyPoints: result.keyPoints
+        };
+        // 添加新记录，最多保留6条
+        setHistory(prev => [newRecord, ...prev].slice(0, 6));
+
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: '鉴定完成，以下是详细报告：',
+          appraisal: newRecord
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      } catch (error) {
+        console.error(error);
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: '抱歉，鉴定过程中出现了错误，请稍后再试。'
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    } else if (hasText) {
+      // 只有文字，发普通消息
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: inputText
       };
-      setMessages(prev => [...prev, aiMessage]);
-    } catch (error) {
-      console.error(error);
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: '抱歉，鉴定过程中出现了错误，请稍后再试。'
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsAnalyzing(false);
-      // 清空文件输入，以便下次选择相同文件
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setMessages(prev => [...prev, userMessage]);
+      setInputText('');
+
+      // 自动回复
+      setTimeout(() => {
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: '我是见真 TureSee AI 助手。请上传您想要鉴定的物品图片，我会为您提供专业的鉴定服务。'
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      }, 600);
     }
   };
 
   const startNewChat = () => {
     setMessages([]);
+    setPendingImages([]);
     setView('home');
   };
 
@@ -138,6 +163,9 @@ export default function App() {
     setMessages([recordMessage]);
     setView('chat');
   };
+
+  // 判断发送按钮是否可用
+  const canSend = pendingImages.length > 0 || inputText.trim().length > 0;
 
   return (
     <div className="flex flex-col h-screen bg-[#FDFDFD] text-[#1A1A1A] font-sans overflow-hidden">
@@ -156,8 +184,8 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <h1 className="text-2xl font-bold tracking-tight">TureSee</h1>
                   </div>
-                  
-                  <Button 
+
+                  <Button
                     onClick={startNewChat}
                     className="w-full bg-black text-white hover:bg-black/90 rounded-2xl py-6 text-lg font-medium"
                   >
@@ -172,9 +200,7 @@ export default function App() {
                           key={record.id}
                           variant="ghost"
                           className="justify-start text-base font-medium h-auto py-3 px-0 hover:bg-transparent hover:text-black/70"
-                          onClick={() => {
-                            viewRecord(record);
-                          }}
+                          onClick={() => viewRecord(record)}
                         >
                           {record.title}
                         </Button>
@@ -187,12 +213,12 @@ export default function App() {
                   <Button variant="ghost" size="icon" className="rounded-full">
                     <Settings className="w-6 h-6 text-gray-500" />
                   </Button>
-                  <span className="text-xs text-gray-400 font-mono">v1.0.2</span>
+                  <span className="text-xs text-gray-400 font-mono">v1.0.3</span>
                 </div>
               </div>
             </SheetContent>
           </Sheet>
-          
+
           {view === 'history' ? (
             <h2 className="text-xl font-bold">历史记录</h2>
           ) : (
@@ -206,7 +232,7 @@ export default function App() {
         <div className="flex items-center gap-1">
           {view === 'history' ? (
             <Button variant="ghost" size="icon" className="rounded-full">
-              <Search className="w-6 h-6" />
+              <History className="w-6 h-6" />
             </Button>
           ) : (
             <>
@@ -239,7 +265,7 @@ export default function App() {
               </div>
               <div className="space-y-2">
                 <h2 className="text-2xl font-bold">和 TureSee 开始对话</h2>
-                <p className="text-gray-400">上传图片或直接输入文字</p>
+                <p className="text-gray-400">上传图片，点击发送开始鉴定</p>
               </div>
             </motion.div>
           )}
@@ -255,8 +281,8 @@ export default function App() {
               <ScrollArea className="h-full">
                 <div className="p-4 flex flex-col gap-6">
                   {history.map((record) => (
-                    <div 
-                      key={record.id} 
+                    <div
+                      key={record.id}
                       className="flex gap-4 cursor-pointer group"
                       onClick={() => viewRecord(record)}
                     >
@@ -296,9 +322,13 @@ export default function App() {
                         "p-4 rounded-3xl max-w-[90%]",
                         msg.role === 'user' ? "bg-black text-white" : "bg-[#F3F3F3] text-black"
                       )}>
-                        {msg.imageUrl && (
-                          <div className="w-32 h-32 rounded-xl overflow-hidden mb-3 border border-gray-200">
-                            <img src={msg.imageUrl} alt="Uploaded" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {msg.imageUrls && msg.imageUrls.length > 0 && (
+                          <div className="flex gap-2 flex-wrap mb-3">
+                            {msg.imageUrls.map((url, i) => (
+                              <div key={i} className="w-20 h-20 rounded-lg overflow-hidden border border-gray-600">
+                                <img src={url} alt="Uploaded" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              </div>
+                            ))}
                           </div>
                         )}
                         <p className="text-lg">{msg.content}</p>
@@ -342,53 +372,85 @@ export default function App() {
 
       {/* Input Area */}
       <footer className="p-4 bg-white border-t border-gray-100">
-        <div className="max-w-2xl mx-auto flex items-center gap-3">
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            className="hidden" 
-            accept="image/*" 
-            multiple
-            onChange={handleImageUpload}
-          />
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-full bg-black text-white hover:bg-black/90 w-12 h-12 flex-shrink-0"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <ImageIcon className="w-6 h-6" />
-          </Button>
-          
-          <div className="flex-1 relative">
-            <Input 
-              placeholder="输入文字..." 
-              className="rounded-full bg-[#F3F3F3] border-none h-12 px-6 text-lg focus-visible:ring-1 focus-visible:ring-black/10"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSendMessage();
-                }
-              }}
-            />
-          </div>
+        <div className="max-w-2xl mx-auto flex flex-col gap-3">
+          {/* 图片预览区域 */}
+          {pendingImages.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {pendingImages.map((img, index) => (
+                <div key={index} className="relative w-16 h-16">
+                  <img
+                    src={img}
+                    alt={`Preview ${index + 1}`}
+                    className="w-full h-full object-cover rounded-lg border border-gray-200"
+                    referrerPolicy="no-referrer"
+                  />
+                  <button
+                    onClick={() => removePendingImage(index)}
+                    className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 text-white rounded-full flex items-center justify-center hover:bg-gray-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {/* 添加更多图片的占位框 */}
+              {pendingImages.length < 4 && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-16 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-500 transition-colors"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+          )}
 
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className={cn(
-              "rounded-full w-12 h-12 flex-shrink-0 transition-colors",
-              inputText.trim() ? "bg-black text-white" : "bg-gray-100 text-gray-300"
-            )}
-            disabled={!inputText.trim()}
-            onClick={handleSendMessage}
-          >
-            <Send className="w-6 h-6" />
-          </Button>
+          <div className="flex items-center gap-3">
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              accept="image/*"
+              multiple
+              onChange={handleImageUpload}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full bg-black text-white hover:bg-black/90 w-12 h-12 flex-shrink-0"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImageIcon className="w-6 h-6" />
+            </Button>
+
+            <div className="flex-1 relative">
+              <Input
+                placeholder={pendingImages.length > 0 ? "添加鉴定说明（可选）..." : "输入文字..."}
+                className="rounded-full bg-[#F3F3F3] border-none h-12 px-6 text-lg focus-visible:ring-1 focus-visible:ring-black/10"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSend();
+                  }
+                }}
+              />
+            </div>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "rounded-full w-12 h-12 flex-shrink-0 transition-colors",
+                canSend ? "bg-black text-white" : "bg-gray-100 text-gray-300"
+              )}
+              disabled={!canSend}
+              onClick={handleSend}
+            >
+              <Send className="w-6 h-6" />
+            </Button>
+          </div>
         </div>
       </footer>
     </div>
   );
 }
-
