@@ -90,59 +90,72 @@ export default function App() {
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
+    // 限制最多4张
+    const limitedFiles = files.slice(0, 4);
+    
     setIsAnalyzing(true);
     setView('chat');
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        role: 'user',
-        content: '请帮我见真一下这件宝贝',
-        imageUrl: base64
-      };
-      setMessages(prev => [...prev, userMessage]);
+    // 读取所有图片为 base64
+    const base64Images = await Promise.all(
+      limitedFiles.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      })
+    );
 
-      try {
-        const result = await appraiseItem(base64, file.type);
-        const newRecord: AppraisalRecord = {
-          id: Date.now().toString(),
-          title: result.title,
-          date: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
-          estimatedValue: result.estimatedValue,
-          description: result.description,
-          imageUrl: base64,
-          conclusion: result.conclusion,
-          model: result.model,
-          keyPoints: result.keyPoints
-        };
-        setHistory(prev => [newRecord, ...prev]);
-        
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: '鉴定完成，以下是详细报告：',
-          appraisal: newRecord
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      } catch (error) {
-        console.error(error);
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: '抱歉，鉴定过程中出现了错误，请稍后再试。'
-        };
-        setMessages(prev => [...prev, errorMessage]);
-      } finally {
-        setIsAnalyzing(false);
-      }
+    // 显示用户消息（显示第一张图片缩略图）
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: `请帮我见真一下这件宝贝（共${base64Images.length}张图片）`,
+      imageUrl: base64Images[0]
     };
-    reader.readAsDataURL(file);
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      // 发送第一张图片进行鉴定（API目前只支持单图）
+      const result = await appraiseItem(base64Images[0], limitedFiles[0].type);
+      const newRecord: AppraisalRecord = {
+        id: Date.now().toString(),
+        title: result.title,
+        date: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
+        estimatedValue: result.estimatedValue,
+        description: result.description,
+        imageUrl: base64Images[0],
+        conclusion: result.conclusion,
+        model: result.model,
+        keyPoints: result.keyPoints
+      };
+      setHistory(prev => [newRecord, ...prev]);
+      
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: '鉴定完成，以下是详细报告：',
+        appraisal: newRecord
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error(error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: '抱歉，鉴定过程中出现了错误，请稍后再试。'
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsAnalyzing(false);
+      // 清空文件输入，以便下次选择相同文件
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const startNewChat = () => {
@@ -370,6 +383,7 @@ export default function App() {
             ref={fileInputRef} 
             className="hidden" 
             accept="image/*" 
+            multiple
             onChange={handleImageUpload}
           />
           <Button 
