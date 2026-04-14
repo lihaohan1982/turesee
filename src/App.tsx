@@ -307,8 +307,8 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="h-full flex flex-col"
             >
-              <ScrollArea className="flex-1">
-                <div className="p-4 flex flex-col gap-6 max-w-2xl mx-auto">
+              <ScrollArea className="flex-1 h-[calc(100vh-140px)] overflow-y-auto">
+                <div className="p-4 flex flex-col gap-6 max-w-2xl mx-auto min-h-full">
                   {messages.map((msg) => (
                     <div key={msg.id} className={cn(
                       "flex flex-col gap-4",
