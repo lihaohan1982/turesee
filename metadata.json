@@ -1,0 +1,5 @@
+{
+  "name": "见真 TureSee",
+  "description": "AI-powered authentication and verification assistant.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
