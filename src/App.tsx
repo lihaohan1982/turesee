@@ -109,6 +109,45 @@ export default function App() {
     }
   };
 
+  // 压缩图片 - 限制尺寸和质量，避免内存溢出
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          // 计算压缩后的尺寸（最大 800px）
+          let { width, height } = img;
+          const maxSize = 800;
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = (height / width) * maxSize;
+              width = maxSize;
+            } else {
+              width = (width / height) * maxSize;
+              height = maxSize;
+            }
+          }
+          
+          // 绘制压缩后的图片
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // 输出为 base64（质量 0.7）
+          const compressed = canvas.toDataURL('image/jpeg', 0.7);
+          resolve(compressed);
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   // 上传图片 - 只添加到待鉴定区域，不直接鉴定
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -121,16 +160,9 @@ export default function App() {
 
     const filesToAdd = files.slice(0, remainingSlots);
 
-    // 读取图片为 base64
+    // 读取并压缩图片
     const newImages = await Promise.all(
-      filesToAdd.map(file => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      })
+      filesToAdd.map(file => compressImage(file))
     );
 
     setPendingImages(prev => [...prev, ...newImages].slice(0, 4));
@@ -307,7 +339,7 @@ export default function App() {
                   <Button variant="ghost" size="icon" className="rounded-full">
                     <Settings className="w-6 h-6 text-gray-500" />
                   </Button>
-                  <span className="text-xs text-gray-400 font-mono">v1.0.5</span>
+                  <span className="text-xs text-gray-400 font-mono">v1.0.6</span>
                 </div>
               </div>
             </SheetContent>
