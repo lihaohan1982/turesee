@@ -12,42 +12,6 @@ import { AppraisalRecord, ViewState } from './types';
 import { appraiseItem } from './lib/gemini';
 import { cn } from '@/lib/utils';
 
-const INITIAL_HISTORY: AppraisalRecord[] = [
-  {
-    id: '1',
-    title: '劳力士 潜航者型 16610',
-    date: '2023年10月26日',
-    estimatedValue: '¥85,000 - ¥95,000',
-    description: '品相极佳，含原装盒证。',
-    imageUrl: 'https://picsum.photos/seed/rolex/200/200',
-    conclusion: '符合正品特征',
-    model: '劳力士 潜航者型',
-    keyPoints: ['表盘刻度对齐', '机芯刻度清晰']
-  },
-  {
-    id: '2',
-    title: '爱马仕 Birkin 30 (黑色)',
-    date: '2023年10月25日',
-    estimatedValue: '¥160,000 - ¥180,000',
-    description: '五金有轻微磨损。',
-    imageUrl: 'https://picsum.photos/seed/birkin/200/200',
-    conclusion: '符合正品特征',
-    model: '爱马仕 Birkin 30',
-    keyPoints: ['缝线均匀', '皮质纹理自然']
-  },
-  {
-    id: '3',
-    title: '1959 Gibson Les Paul Standard',
-    date: '2023年10月24日',
-    estimatedValue: '¥1,800,000 - ¥2,200,000',
-    description: '罕见成色，极具收藏价值。',
-    imageUrl: 'https://picsum.photos/seed/gibson/200/200',
-    conclusion: '符合正品特征',
-    model: 'Gibson Les Paul',
-    keyPoints: ['木材纹理真实', '配件原装']
-  }
-];
-
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -58,7 +22,7 @@ interface Message {
 
 export default function App() {
   const [view, setView] = useState<ViewState>('home');
-  const [history, setHistory] = useState<AppraisalRecord[]>(INITIAL_HISTORY);
+  const [history, setHistory] = useState<AppraisalRecord[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -134,7 +98,8 @@ export default function App() {
         model: result.model,
         keyPoints: result.keyPoints
       };
-      setHistory(prev => [newRecord, ...prev]);
+      // 添加新记录，最多保留6条
+      setHistory(prev => [newRecord, ...prev].slice(0, 6));
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -202,7 +167,7 @@ export default function App() {
                   <div className="flex flex-col gap-4">
                     <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">最近对话</h3>
                     <div className="flex flex-col gap-2">
-                      {history.slice(0, 5).map(record => (
+                      {history.slice(0, 6).map(record => (
                         <Button
                           key={record.id}
                           variant="ghost"
