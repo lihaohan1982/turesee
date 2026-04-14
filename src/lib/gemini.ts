@@ -1,26 +1,115 @@
 import { AppraisalRecord } from '../types';
 
-// Mock鉴定结果（后续替换为真实API）
-export const appraiseItem = async (base64Image: string, mimeType: string): Promise<Omit<AppraisalRecord, 'id' | 'date' | 'imageUrl'>> => {
-  // 模拟网络延迟
-  await new Promise(resolve => setTimeout(resolve, 1800));
+const API_URL = 'https://api.newcoin.tech/v1/chat/completions';
+const MODEL = 'doubao-seed-1-8-251228';
 
-  return {
-    title: '清代青花瓷瓶',
-    conclusion: '符合正品特征',
-    model: '清代中期青花釉里红梅瓶',
-    estimatedValue: '¥45,000 - ¥65,000',
-    description: '器型周正，胎质细腻，青花发色纯正，纹饰精细流畅，品相完整。',
-    keyPoints: [
-      '器型符合清代中期制瓷特征',
-      '青花发色纯正，无晕散',
-      '胎釉结合紧密，釉面温润',
-      '纹饰绘制精细，笔力遒劲',
-    ],
-  };
+export const appraiseItem = async (base64Image: string, mimeType: string): Promise<Omit<AppraisalRecord, 'id' | 'date' | 'imageUrl'>> => {
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_API_KEY || 'sk-P8OXuQgYiv5u5hHCsV30Ls3HySxWJ7OpqCWTr1skz7Rk29Sm'}`
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: `你是"见真 TureSee"AI鉴真助手，专注于鉴定物品真伪。请分析用户上传的图片，返回JSON格式的鉴定结果。
+
+输出格式要求（严格JSON）：
+{
+  "title": "物品名称",
+  "conclusion": "鉴定结论（真/假/无法确定）",
+  "model": "详细型号/年代描述",
+  "estimatedValue": "参考价值范围",
+  "description": "物品特征描述",
+  "keyPoints": ["关键鉴定点1", "关键鉴定点2", ...]
+}
+
+注意：
+- 如果无法确定，给出"无法确定"结论并说明原因
+- estimatedValue可以是"无参考市场价值"或具体金额
+- 返回纯JSON，不要任何其他文字`
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: '请鉴定这张图片中的物品，给出专业的鉴定意见。'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 2000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '{}';
+    
+    // 尝试解析JSON
+    let result;
+    try {
+      result = JSON.parse(content);
+    } catch {
+      // 如果不是标准JSON，尝试提取
+      const match = content.match(/\{[\s\S]*\}/);
+      if (match) {
+        result = JSON.parse(match[0]);
+      } else {
+        throw new Error('Failed to parse response');
+      }
+    }
+
+    return {
+      title: result.title || '鉴定物品',
+      conclusion: result.conclusion || '无法确定',
+      model: result.model || '',
+      estimatedValue: result.estimatedValue || '',
+      description: result.description || '',
+      keyPoints: result.keyPoints || []
+    };
+  } catch (error) {
+    console.error('Appraisal error:', error);
+    throw error;
+  }
 };
 
 export const generateResponse = async (prompt: string, imageBase64?: string): Promise<string> => {
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  return '我是 TureSee AI 助手，专注于物品真伪鉴定。请上传您想要鉴定的图片，我会为您提供专业分析。';
+  if (imageBase64) {
+    const result = await appraiseItem(imageBase64, 'image/jpeg');
+    return `
+【${result.title}】
+
+【鉴定结论】
+${result.conclusion}
+
+【型号/年代】
+${result.model}
+
+${result.description ? `【物品描述】\n${result.description}` : ''}
+
+${result.keyPoints.length > 0 ? `【鉴定要点】\n${result.keyPoints.map(p => `• ${p}`).join('\n')}` : ''}
+
+${result.estimatedValue ? `【参考价值】\n${result.estimatedValue}` : ''}
+
+---
+本结果由AI生成，仅供参考。`;
+  }
+
+  // 无图片时的对话
+  return '请上传要鉴定的图片，我会为您分析。';
 };
