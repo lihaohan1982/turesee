@@ -5,6 +5,9 @@ const MODEL = 'doubao-seed-1-8-251228';
 
 export const appraiseItem = async (base64Image: string, mimeType: string): Promise<Omit<AppraisalRecord, 'id' | 'date' | 'imageUrl'>> => {
   try {
+    // 移除可能重复的 data:image/xxx;base64, 前缀
+    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
@@ -43,7 +46,7 @@ export const appraiseItem = async (base64Image: string, mimeType: string): Promi
               {
                 type: 'image_url',
                 image_url: {
-                  url: `data:${mimeType};base64,${base64Image}`
+                  url: `data:${mimeType};base64,${cleanBase64}`
                 }
               }
             ]
