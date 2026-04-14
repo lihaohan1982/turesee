@@ -36,23 +36,34 @@ export default function App() {
       try {
         const { images, messageId } = JSON.parse(savedState);
         if (images && images.length > 0) {
-          setPendingImages(images);
-          setView('chat');
-          
-          // 添加用户消息
-          const userMessage: Message = {
-            id: messageId,
-            role: 'user',
-            content: `请帮我见真一下这件宝贝（共${images.length}张图片）`,
-            imageUrls: images
-          };
-          setMessages(prev => [...prev, userMessage]);
-          
-          // 继续鉴定
-          resumeAppraisal(images);
-          
-          // 清除保存的状态
-          sessionStorage.removeItem('turesee_pending');
+          // 检查消息是否已经存在，避免重复
+          setMessages(prev => {
+            const existingMessage = prev.find(m => m.id === messageId);
+            if (existingMessage) {
+              // 消息已存在，清除状态并返回原数组
+              sessionStorage.removeItem('turesee_pending');
+              return prev;
+            }
+            
+            // 添加用户消息并继续鉴定
+            setPendingImages(images);
+            setView('chat');
+            
+            const userMessage: Message = {
+              id: messageId,
+              role: 'user',
+              content: `请帮我见真一下这件宝贝（共${images.length}张图片）`,
+              imageUrls: images
+            };
+            
+            // 继续鉴定
+            setTimeout(() => resumeAppraisal(images), 0);
+            
+            // 清除保存的状态
+            sessionStorage.removeItem('turesee_pending');
+            
+            return [...prev, userMessage];
+          });
         }
       } catch (e) {
         sessionStorage.removeItem('turesee_pending');
@@ -196,6 +207,8 @@ export default function App() {
         setMessages(prev => [...prev, aiMessage]);
       } catch (error) {
         console.error(error);
+        // 错误时也要清除保存的状态
+        sessionStorage.removeItem('turesee_pending');
         const errorMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
@@ -294,7 +307,7 @@ export default function App() {
                   <Button variant="ghost" size="icon" className="rounded-full">
                     <Settings className="w-6 h-6 text-gray-500" />
                   </Button>
-                  <span className="text-xs text-gray-400 font-mono">v1.0.4</span>
+                  <span className="text-xs text-gray-400 font-mono">v1.0.5</span>
                 </div>
               </div>
             </SheetContent>
