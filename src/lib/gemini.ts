@@ -5,8 +5,13 @@ const MODEL = 'doubao-seed-1-8-251228';
 
 export const appraiseItem = async (base64Image: string, mimeType: string): Promise<Omit<AppraisalRecord, 'id' | 'date' | 'imageUrl'>> => {
   try {
-    // 移除可能重复的 data:image/xxx;base64, 前缀
-    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    // 确保base64格式正确（可能已包含或未包含data URI前缀）
+    let cleanBase64 = base64Image;
+    if (base64Image.includes(',')) {
+      cleanBase64 = base64Image.split(',')[1];
+    }
+    
+    const imageDataUri = `data:${mimeType};base64,${cleanBase64}`;
     
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -46,7 +51,7 @@ export const appraiseItem = async (base64Image: string, mimeType: string): Promi
               {
                 type: 'image_url',
                 image_url: {
-                  url: `data:${mimeType};base64,${cleanBase64}`
+                  url: imageDataUri
                 }
               }
             ]
@@ -57,7 +62,8 @@ export const appraiseItem = async (base64Image: string, mimeType: string): Promi
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -73,7 +79,7 @@ export const appraiseItem = async (base64Image: string, mimeType: string): Promi
       if (match) {
         result = JSON.parse(match[0]);
       } else {
-        throw new Error('Failed to parse response');
+        throw new Error('Failed to parse response: ' + content.substring(0, 100));
       }
     }
 
