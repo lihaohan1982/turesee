@@ -83,7 +83,7 @@ export default function App() {
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: '我是 TureSee AI 助手。请上传您想要鉴定的奢侈品图片，我会为您提供专业的鉴定和估值服务。'
+        content: '我是见真 TureSee AI 助手。请上传您想要鉴定的物品图片，我会为您提供专业的鉴定服务。'
       };
       setMessages(prev => [...prev, aiMessage]);
     }, 600);
@@ -103,7 +103,7 @@ export default function App() {
       const userMessage: Message = {
         id: Date.now().toString(),
         role: 'user',
-        content: `请帮我鉴定一下这款${file.name.split('.')[0]}`,
+        content: '请帮我见真一下这件宝贝',
         imageUrl: base64
       };
       setMessages(prev => [...prev, userMessage]);
