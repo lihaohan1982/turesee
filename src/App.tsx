@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Menu, Settings, Image as ImageIcon, Send, Plus, History, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,75 @@ export default function App() {
   const [inputText, setInputText] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 页面加载时恢复未完成的鉴定状态
+  useEffect(() => {
+    const savedState = sessionStorage.getItem('turesee_pending');
+    if (savedState) {
+      try {
+        const { images, messageId } = JSON.parse(savedState);
+        if (images && images.length > 0) {
+          setPendingImages(images);
+          setView('chat');
+          
+          // 添加用户消息
+          const userMessage: Message = {
+            id: messageId,
+            role: 'user',
+            content: `请帮我见真一下这件宝贝（共${images.length}张图片）`,
+            imageUrls: images
+          };
+          setMessages(prev => [...prev, userMessage]);
+          
+          // 继续鉴定
+          resumeAppraisal(images);
+          
+          // 清除保存的状态
+          sessionStorage.removeItem('turesee_pending');
+        }
+      } catch (e) {
+        sessionStorage.removeItem('turesee_pending');
+      }
+    }
+  }, []);
+
+  // 恢复鉴定流程
+  const resumeAppraisal = async (images: string[]) => {
+    setIsAnalyzing(true);
+    try {
+      const result = await appraiseItem(images[0], 'image/jpeg');
+      const newRecord: AppraisalRecord = {
+        id: Date.now().toString(),
+        title: result.title,
+        date: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
+        estimatedValue: result.estimatedValue,
+        description: result.description,
+        imageUrl: images[0],
+        conclusion: result.conclusion,
+        model: result.model,
+        keyPoints: result.keyPoints
+      };
+      setHistory(prev => [newRecord, ...prev].slice(0, 6));
+
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: '鉴定完成，以下是详细报告：',
+        appraisal: newRecord
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error(error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: '抱歉，鉴定过程中出现了错误，请稍后再试。'
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   // 上传图片 - 只添加到待鉴定区域，不直接鉴定
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,8 +147,9 @@ export default function App() {
       setIsAnalyzing(true);
 
       // 添加用户消息
+      const msgId = Date.now().toString();
       const userMessage: Message = {
-        id: Date.now().toString(),
+        id: msgId,
         role: 'user',
         content: hasText ? inputText : `请帮我见真一下这件宝贝（共${pendingImages.length}张图片）`,
         imageUrls: pendingImages
@@ -87,6 +157,13 @@ export default function App() {
       setMessages(prev => [...prev, userMessage]);
 
       const submittedImages = [...pendingImages];
+      
+      // 保存状态到sessionStorage，防止页面刷新丢失
+      sessionStorage.setItem('turesee_pending', JSON.stringify({
+        images: submittedImages,
+        messageId: msgId
+      }));
+      
       setPendingImages([]);
       setInputText('');
 
@@ -106,6 +183,9 @@ export default function App() {
         };
         // 添加新记录，最多保留6条
         setHistory(prev => [newRecord, ...prev].slice(0, 6));
+        
+        // 鉴定完成，清除保存的状态
+        sessionStorage.removeItem('turesee_pending');
 
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -151,6 +231,7 @@ export default function App() {
     setMessages([]);
     setPendingImages([]);
     setView('home');
+    sessionStorage.removeItem('turesee_pending');
   };
 
   const viewRecord = (record: AppraisalRecord) => {
@@ -213,7 +294,7 @@ export default function App() {
                   <Button variant="ghost" size="icon" className="rounded-full">
                     <Settings className="w-6 h-6 text-gray-500" />
                   </Button>
-                  <span className="text-xs text-gray-400 font-mono">v1.0.3</span>
+                  <span className="text-xs text-gray-400 font-mono">v1.0.4</span>
                 </div>
               </div>
             </SheetContent>
