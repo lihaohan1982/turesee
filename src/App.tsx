@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, Settings, Image as ImageIcon, Send, Plus, History, X } from 'lucide-react';
+import { Menu, Settings, Image as ImageIcon, Send, Plus, History, X, User, LogOut, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -20,6 +20,12 @@ interface Message {
   appraisal?: AppraisalRecord;
 }
 
+interface UserInfo {
+  phone: string;
+  nickname: string;
+  isVip: boolean;
+}
+
 export default function App() {
   const [view, setView] = useState<ViewState>('home');
   const [history, setHistory] = useState<AppraisalRecord[]>([]);
@@ -27,7 +33,75 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [inputText, setInputText] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [loginPhone, setLoginPhone] = useState('');
+  const [loginCode, setLoginCode] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 加载用户信息
+  useEffect(() => {
+    const savedUser = localStorage.getItem('turesee_user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
+
+  // 倒计时
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
+  // 发送验证码
+  const sendCode = () => {
+    if (!loginPhone || loginPhone.length !== 11) {
+      alert('请输入正确的手机号');
+      return;
+    }
+    setCodeSent(true);
+    setCountdown(60);
+    // 模拟发送验证码
+    alert('验证码已发送');
+  };
+
+  // 登录/注册
+  const handleLogin = () => {
+    if (!loginPhone || loginPhone.length !== 11) {
+      alert('请输入正确的手机号');
+      return;
+    }
+    if (!loginCode || loginCode.length !== 4) {
+      alert('请输入4位验证码');
+      return;
+    }
+    
+    // 模拟登录成功
+    const newUser: UserInfo = {
+      phone: loginPhone,
+      nickname: `用户${loginPhone.slice(-4)}`,
+      isVip: true // 注册即VIP，不限量鉴定
+    };
+    setUser(newUser);
+    localStorage.setItem('turesee_user', JSON.stringify(newUser));
+    setShowSettings(false);
+    setLoginPhone('');
+    setLoginCode('');
+    setCodeSent(false);
+    alert('登录成功！您已是VIP会员，可无限次鉴定');
+  };
+
+  // 退出登录
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('turesee_user');
+    setShowSettings(false);
+  };
 
   // 页面加载时恢复未完成的鉴定状态
   useEffect(() => {
@@ -336,10 +410,10 @@ export default function App() {
                 </div>
 
                 <div className="mt-auto p-6 border-t border-gray-100 flex items-center justify-between">
-                  <Button variant="ghost" size="icon" className="rounded-full">
+                  <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setShowSettings(true)}>
                     <Settings className="w-6 h-6 text-gray-500" />
                   </Button>
-                  <span className="text-xs text-gray-400 font-mono">v1.0.6</span>
+                  <span className="text-xs text-gray-400 font-mono">v1.0.7</span>
                 </div>
               </div>
             </SheetContent>
@@ -356,6 +430,12 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-1">
+          {user && (
+            <div className="flex items-center gap-1 mr-2 px-2 py-1 bg-orange-50 rounded-full">
+              <Crown className="w-4 h-4 text-orange-500" />
+              <span className="text-xs text-orange-600 font-medium">VIP</span>
+            </div>
+          )}
           {view === 'history' ? (
             <Button variant="ghost" size="icon" className="rounded-full">
               <History className="w-6 h-6" />
@@ -365,8 +445,14 @@ export default function App() {
               <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setView('history')}>
                 <History className="w-6 h-6" />
               </Button>
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <Settings className="w-6 h-6" />
+              <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setShowSettings(true)}>
+                {user ? (
+                  <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
+                ) : (
+                  <Settings className="w-6 h-6" />
+                )}
               </Button>
             </>
           )}
@@ -577,6 +663,156 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowSettings(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl w-full max-w-sm p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* 已登录状态 */}
+              {user && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-bold">会员中心</h2>
+                    <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-gray-100 rounded-full">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-orange-500 to-orange-400 rounded-xl p-4 text-white">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Crown className="w-5 h-5" />
+                      <span className="font-bold">VIP会员</span>
+                    </div>
+                    <p className="text-sm opacity-90">{user.nickname}</p>
+                    <p className="text-xs opacity-75">{user.phone}</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-gray-600">会员状态</span>
+                      <Badge className="bg-green-500">已开通</Badge>
+                    </div>
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-gray-600">鉴定次数</span>
+                      <span className="font-medium text-green-600">无限次</span>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-xl"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    退出登录
+                  </Button>
+                </div>
+              )}
+              
+              {/* 未登录状态 */}
+              {!user && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-bold">{isRegistering ? '注册账号' : '登录账号'}</h2>
+                    <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-gray-100 rounded-full">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <p className="text-sm text-gray-500">
+                    注册后即可享受无限次鉴定服务
+                  </p>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-sm text-gray-600 mb-1 block">手机号</label>
+                      <Input
+                        type="tel"
+                        placeholder="请输入手机号"
+                        value={loginPhone}
+                        onChange={(e) => setLoginPhone(e.target.value)}
+                        className="rounded-xl"
+                        maxLength={11}
+                      />
+                    </div>
+                    
+                    {isRegistering && (
+                      <div>
+                        <label className="text-sm text-gray-600 mb-1 block">验证码</label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder="请输入验证码"
+                            value={loginCode}
+                            onChange={(e) => setLoginCode(e.target.value)}
+                            className="rounded-xl flex-1"
+                            maxLength={4}
+                          />
+                          <Button
+                            variant="outline"
+                            className="rounded-xl px-4"
+                            onClick={sendCode}
+                            disabled={countdown > 0}
+                          >
+                            {countdown > 0 ? `${countdown}s` : '获取验证码'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <Button
+                    className="w-full rounded-xl bg-black text-white hover:bg-black/90"
+                    onClick={handleLogin}
+                  >
+                    {isRegistering ? '注册并登录' : '获取验证码'}
+                  </Button>
+                  
+                  <p className="text-center text-sm text-gray-500">
+                    {isRegistering ? (
+                      <>
+                        已有账号？
+                        <button
+                          className="text-black font-medium ml-1"
+                          onClick={() => setIsRegistering(false)}
+                        >
+                          登录
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        还没有账号？
+                        <button
+                          className="text-black font-medium ml-1"
+                          onClick={() => {
+                            setIsRegistering(true);
+                            sendCode();
+                          }}
+                        >
+                          立即注册
+                        </button>
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
