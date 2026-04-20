@@ -1,30 +1,37 @@
 import { AppraisalRecord } from '../types';
 
-const API_URL = 'https://api.newcoin.tech/v1/chat/completions';
-const MODEL = 'doubao-seed-1-8-251228';
+const API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses';
+const API_KEY = 'ark-5c02fd95-7502-49ba-8c45-2c0f71c2883f-b815a';
+const MODEL = 'doubao-seed-2-0-lite-260215';
 
 export const appraiseItem = async (base64Image: string, mimeType: string): Promise<Omit<AppraisalRecord, 'id' | 'date' | 'imageUrl'>> => {
   try {
-    // 确保base64格式正确（可能已包含或未包含data URI前缀）
+    // 确保base64格式正确
     let cleanBase64 = base64Image;
     if (base64Image.includes(',')) {
       cleanBase64 = base64Image.split(',')[1];
     }
-    
     const imageDataUri = `data:${mimeType};base64,${cleanBase64}`;
-    
+
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_API_KEY || 'sk-P8OXuQgYiv5u5hHCsV30Ls3HySxWJ7OpqCWTr1skz7Rk29Sm'}`
+        'Authorization': `Bearer ${API_KEY}`
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [
+        input: [
           {
-            role: 'system',
-            content: `你是"见真 TureSee"AI鉴真助手，专注于鉴定物品真伪。请分析用户上传的图片，返回JSON格式的鉴定结果。
+            role: 'user',
+            content: [
+              {
+                type: 'input_image',
+                image_url: imageDataUri
+              },
+              {
+                type: 'input_text',
+                text: `你是"见真 TureSee"AI鉴真助手，专注于鉴定物品真伪。请分析用户上传的图片，返回JSON格式的鉴定结果。
 
 输出格式要求（严格JSON）：
 {
@@ -40,24 +47,10 @@ export const appraiseItem = async (base64Image: string, mimeType: string): Promi
 - 如果无法确定，给出"无法确定"结论并说明原因
 - estimatedValue可以是"无参考市场价值"或具体金额
 - 返回纯JSON，不要任何其他文字`
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: '请鉴定这张图片中的物品，给出专业的鉴定意见。'
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageDataUri
-                }
               }
             ]
           }
-        ],
-        max_tokens: 2000
+        ]
       })
     });
 
@@ -67,8 +60,23 @@ export const appraiseItem = async (base64Image: string, mimeType: string): Promi
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '{}';
     
+    // 从 Responses API 的 output 中提取文本
+    let content = '';
+    if (data.output) {
+      for (const item of data.output) {
+        if (item.type === 'message' && item.content) {
+          for (const c of item.content) {
+            if (c.type === 'output_text') {
+              content = c.text;
+              break;
+            }
+          }
+        }
+        if (content) break;
+      }
+    }
+
     // 尝试解析JSON
     let result;
     try {
@@ -79,7 +87,7 @@ export const appraiseItem = async (base64Image: string, mimeType: string): Promi
       if (match) {
         result = JSON.parse(match[0]);
       } else {
-        throw new Error('Failed to parse response: ' + content.substring(0, 100));
+        throw new Error('Failed to parse response: ' + content.substring(0, 200));
       }
     }
 
@@ -109,11 +117,14 @@ ${result.conclusion}
 【型号/年代】
 ${result.model}
 
-${result.description ? `【物品描述】\n${result.description}` : ''}
+${result.description ? `【物品描述】
+${result.description}` : ''}
 
-${result.keyPoints.length > 0 ? `【鉴定要点】\n${result.keyPoints.map(p => `• ${p}`).join('\n')}` : ''}
+${result.keyPoints.length > 0 ? `【鉴定要点】
+${result.keyPoints.map(p => `• ${p}`).join('\n')}` : ''}
 
-${result.estimatedValue ? `【参考价值】\n${result.estimatedValue}` : ''}
+${result.estimatedValue ? `【参考价值】
+${result.estimatedValue}` : ''}
 
 ---
 本结果由AI生成，仅供参考。`;
